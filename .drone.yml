@@ -1,6 +1,6 @@
 ---
 kind: pipeline
-name: build
+name: build-amd64
 
 platform:
   os: linux
@@ -16,34 +16,137 @@ steps:
 - name: tags
   image: golang:1.14
   commands:
-  - echo -n "$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD),latest" > .tags
-  when:
-    branch:
-    - master
-    event:
-    - push
+  - echo -n "$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)-linux-amd64,latest-linux-amd64" > .tags
+  #when:
+  #  branch:
+  #  - master
+  #  event:
+  #  - push
 
 - name: docker
   image: plugins/docker
   settings:
     registry: quay.io
-    repo: quay.io/conprof/conprof
+    repo: quay.io/povilasv/conprof
     password:
       from_secret: quay_password
     username:
       from_secret: quay_username
-  when:
-    branch:
-    - master
-    event:
-    - push
+  #when:
+  #  branch:
+  #  - master
+  #  event:
+  #  - push
 
 - name: docker-test
   image: plugins/docker
   settings:
     dry_run: true
-    repo: quay.io/conprof/conprof
+    repo: quay.io/povilasv/conprof
   when:
     branch:
     event:
     - pull-request
+---
+kind: pipeline
+name: build-arm64
+
+platform:
+  os: linux
+  arch: arm64
+
+steps:
+- name: build
+  pull: always
+  image: golang:1.13
+  commands:
+  - make
+
+- name: tags
+  image: golang:1.13
+  commands:
+  - echo -n "$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)-linux-arm64,latest-linux-arm64" > .tags
+
+- name: docker
+  image: plugins/docker
+  settings:
+    registry: quay.io
+    repo: quay.io/povilasv/conprof
+    password:
+      from_secret: quay_password
+    username:
+      from_secret: quay_username
+---
+kind: pipeline
+name: build-arm
+
+platform:
+  os: linux
+  arch: arm
+
+steps:
+- name: build
+  pull: always
+  image: golang:1.13
+  commands:
+  - make
+
+- name: tags
+  image: golang:1.13
+  commands:
+  - echo -n "$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)-linux-arm,latest-linux-arm" > .tags
+
+- name: docker
+  image: plugins/docker
+  settings:
+    registry: quay.io
+    repo: quay.io/povilasv/conprof
+    password:
+      from_secret: quay_password
+    username:
+      from_secret: quay_username
+---
+kind: pipeline
+name: manifest
+
+platform:
+ os: linux
+ arch: amd64
+
+steps:
+- name: tags
+  image: golang:1.13
+  commands:
+  - echo -n "$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)" > .tags
+  - tag=$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD); sed -i "s/TAG/$tag/g" manifest.tmpl
+
+- name: manifest
+  image: plugins/manifest
+  settings:
+    password:
+      from_secret: quay_password
+    username:
+      from_secret: quay_username
+    target: quay.io/povilasv/conprof:latest
+    template: quay.io/povilasv/conprof:latest-OS-ARCH
+    platforms:
+      - linux/amd64
+      - linux/arm
+      - linux/arm64
+
+- name: manifest-tags
+  image: plugins/manifest
+  settings:
+    dump: true
+    password:
+      from_secret: quay_password
+    username:
+      from_secret: quay_username
+    spec: manifest.tmpl
+    tags:
+      auto: false
+
+depends_on:
+- build-amd64
+- build-arm64
+- build-arm
