@@ -488,6 +488,13 @@ mainLoop:
 
 		b := sl.buffers.Get(sl.lastScrapeSize).([]byte)
 		buf := bytes.NewBuffer(b)
+		var scrapeType string
+		for _, l := range sl.target.labels {
+			if l.Name == ProfileType {
+				scrapeType = l.Value
+				break
+			}
+		}
 
 		var profileType string
 		for _, l := range sl.target.labels {
