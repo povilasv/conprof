@@ -17,36 +17,22 @@ steps:
   image: golang:1.14
   commands:
   - echo -n "$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)-linux-amd64,latest-linux-amd64" > .tags
-  when:
-    branch:
-    - master
-    event:
-    - push
 
 - name: docker
   image: plugins/docker
   settings:
     registry: quay.io
-    repo: quay.io/conprof/conprof
+    repo: quay.io/povilasv/conprof
     password:
       from_secret: quay_password
     username:
       from_secret: quay_username
-  when:
-    branch:
-    - master
-    event:
-    - push
 
 - name: docker-test
   image: plugins/docker
   settings:
     dry_run: true
-    repo: quay.io/conprof/conprof
-  when:
-    branch:
-    event:
-    - pull-request
+    repo: quay.io/povilasv/conprof
 ---
 kind: pipeline
 name: build-arm64
@@ -71,16 +57,11 @@ steps:
   image: plugins/docker
   settings:
     registry: quay.io
-    repo: quay.io/conprof/conprof
+    repo: quay.io/povilasv/conprof
     password:
       from_secret: quay_password
     username:
       from_secret: quay_username
-  when:
-    branch:
-    - master
-    event:
-    - push
 ---
 kind: pipeline
 name: build-arm
@@ -105,16 +86,11 @@ steps:
   image: plugins/docker
   settings:
     registry: quay.io
-    repo: quay.io/conprof/conprof
+    repo: quay.io/povilasv/conprof
     password:
       from_secret: quay_password
     username:
       from_secret: quay_username
-  when:
-    branch:
-    - master
-    event:
-    - push
 ---
 kind: pipeline
 name: manifest
@@ -129,11 +105,6 @@ steps:
   commands:
   - echo -n "$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD)" > .tags
   - tag=$(git rev-parse --abbrev-ref HEAD | tr / -)-$(date +%Y-%m-%d)-$(git rev-parse --short HEAD); sed -i "s/TAG/$tag/g" manifest.tmpl
-  when:
-    branch:
-    - master
-    event:
-    - push
 
 - name: manifest
   image: plugins/manifest
@@ -142,18 +113,12 @@ steps:
       from_secret: quay_password
     username:
       from_secret: quay_username
-    target: quay.io/conprof/conprof:latest
-    template: quay.io/conprof/conprof:latest-OS-ARCH
+    target: quay.io/povilasv/conprof:latest
+    template: quay.io/povilasv/conprof:latest-OS-ARCH
     platforms:
       - linux/amd64
       - linux/arm64
       - linux/arm
-  when:
-    branch:
-    - master
-    event:
-    - push
-
 
 - name: manifest-tags
   image: plugins/manifest
@@ -166,12 +131,6 @@ steps:
     spec: manifest.tmpl
     tags:
       auto: false
-  when:
-    branch:
-    - master
-    event:
-    - push
-
 
 depends_on:
 - build-amd64
