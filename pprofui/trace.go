@@ -23,12 +23,13 @@ import (
 )
 
 // httpTrace serves either whole trace (goid==0) or trace for goid goroutine.
-func httpTrace(w http.ResponseWriter, r *http.Request) {
+func httpTrace(w http.ResponseWriter, r *http.Request, path string) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	html := strings.ReplaceAll(templTrace, "{{PARAMS}}", r.Form.Encode())
+	html := strings.ReplaceAll(templTrace, "{{PATH}}", path)
+	html = strings.ReplaceAll(html, "{{PARAMS}}", r.Form.Encode())
 	w.Write([]byte(html))
 }
 
@@ -44,12 +45,12 @@ var templTrace = `
 function onTraceViewerImportFail() {
   document.addEventListener('DOMContentLoaded', function() {
     document.body.textContent =
-    '/trace_viewer_full.html is missing. File a bug in https://golang.org/issue';
+    '/trace_viewer_full.html is missing.';
   });
 }
 </script>
 
-<link rel="import" href="/trace_viewer_html"
+<link rel="import" href="/trace_viewer_full.html"
       onerror="onTraceViewerImportFail(event)">
 
 <style type="text/css">
@@ -149,7 +150,7 @@ function onTraceViewerImportFail() {
     viewer.globalMode = true;
     Polymer.dom(document.body).appendChild(viewer);
 
-    url = '/jsontrace?{{PARAMS}}';
+    url = '{{PATH}}/jsontrace?{{PARAMS}}';
     load();
   });
 }());

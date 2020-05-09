@@ -3,10 +3,9 @@ package pprofui
 import (
 	"html/template"
 	"net/http"
-	"strings"
 )
 
-func traceUIhttpMain(w http.ResponseWriter, r *http.Request, ranges []Range, path, timestamp string) {
+func traceUIhttpMain(w http.ResponseWriter, r *http.Request, ranges []Range, path string) {
 	type Templ struct {
 		Range []Range
 		Path  string
@@ -14,7 +13,7 @@ func traceUIhttpMain(w http.ResponseWriter, r *http.Request, ranges []Range, pat
 
 	if err := templMain.Execute(w, Templ{
 		Range: ranges,
-		Path:  strings.Join([]string{path, timestamp}, "/"),
+		Path:  path,
 	}); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return

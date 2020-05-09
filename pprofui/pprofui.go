@@ -127,7 +127,7 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 			level.Error(p.logger).Log("err parse trace", err)
 			return
 		}
-		switch remainingPath {
+		switch strings.ReplaceAll(remainingPath, "?", "") {
 		case "/usertasks":
 			httpUserTasks(w, r, &res)
 			return
@@ -147,16 +147,10 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 			httpGoroutine(w, r, res.Events)
 			return
 		case "/trace":
-			httpTrace(w, r)
+			httpTrace(w, r, "/pprof/"+series+"/"+timestamp)
 			return
 		case "/jsontrace":
 			httpJsonTrace(w, r, &res)
-			return
-		case "/trace_viewer_html":
-			httpTraceViewerHTML(w, r)
-			return
-		case "/webcomponents.min.js":
-			webcomponentsJS(w, r)
 			return
 		default:
 			ranges, err := splitTrace(res)
@@ -165,7 +159,7 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 				return
 			}
 
-			traceUIhttpMain(w, r, ranges, series, timestamp)
+			traceUIhttpMain(w, r, ranges, series+"/"+timestamp)
 			return
 		}
 
