@@ -25,6 +25,8 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conprof/conprof/scrape"
+	"github.com/conprof/conprof/trace"
 	"github.com/conprof/tsdb"
 	"github.com/conprof/tsdb/labels"
 	"github.com/go-kit/kit/log"
@@ -81,22 +83,16 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 	}
 
 	m := make(labels.Selector, len(seriesLabels))
+	var profType string
 	for i, l := range seriesLabels {
 		m[i] = labels.NewEqualMatcher(l.Name, l.Value)
-	}
-
-	server := func(args *driver.HTTPServerArgs) error {
-		handler, ok := args.Handlers[remainingPath]
-		if !ok {
-			return errors.Errorf("unknown endpoint %s", remainingPath)
+		if l.Name == scrape.ProfileType {
+			profType = l.Value
 		}
-		handler.ServeHTTP(w, r)
-		return nil
 	}
 
-	storageFetcher := func(_ string, _, _ time.Duration) (*profile.Profile, string, error) {
-		var prof *profile.Profile
-
+	switch profType {
+	case scrape.ProfileTraceType:
 		q, err := p.db.Querier(0, math.MaxInt64)
 		if err != nil {
 			level.Error(p.logger).Log("err", err)
@@ -105,48 +101,112 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 		ss, err := q.Select(m...)
 		if err != nil {
 			level.Error(p.logger).Log("err", err)
-			return nil, "", err
+			return
 		}
 
 		ok := ss.Next()
 		if !ok {
-			return nil, "", errors.New("could not get series set")
+			return
 		}
 		s := ss.At()
 		i := s.Iterator()
 		t, err := stringToInt(timestamp)
 		if err != nil {
-			return nil, "", err
+			return
 		}
 		ok = i.Seek(t)
 		if !ok {
-			return nil, "", errors.New("could not seek series")
+			return
 		}
 		_, buf := i.At()
-		prof, err = profile.Parse(bytes.NewReader(buf))
-		return prof, "", err
-	}
+		res, err := trace.Parse(bytes.NewBuffer(buf), "")
+		if err != nil {
+			return
+		}
 
-	// Invoke the (library version) of `pprof` with a number of stubs.
-	// Specifically, we pass a fake FlagSet that plumbs through the
-	// given args, a UI that logs any errors pprof may emit, a fetcher
-	// that simply reads the profile we downloaded earlier, and a
-	// HTTPServer that pprof will pass the web ui handlers to at the
-	// end (and we let it handle this client request).
-	if err := driver.PProf(&driver.Options{
-		Flagset: &pprofFlags{
-			FlagSet: pflag.NewFlagSet("pprof", pflag.ExitOnError),
-			args: []string{
-				"--symbolize", "none",
-				"--http", "localhost:0",
-				"", // we inject our own target
+		ranges, err := splitTrace(res)
+		if err != nil {
+			return
+		}
+
+		/*
+							http.HandleFunc("/usertasks", httpUserTasks)
+							http.HandleFunc("/usertask", httpUserTask)
+							http.HandleFunc("/userregions", httpUserRegions)
+							http.HandleFunc("/userregion", httpUserRegion)
+					http.HandleFunc("/goroutines", httpGoroutines)
+					http.HandleFunc("/goroutine", httpGoroutine)
+			http.HandleFunc("/trace", httpTrace)
+			http.HandleFunc("/jsontrace", httpJsonTrace)
+			http.HandleFunc("/trace_viewer_html", httpTraceViewerHTML)
+			http.HandleFunc("/webcomponents.min.js", webcomponentsJS)
+
+		*/
+		traceUIhttpMain(w, r, ranges)
+	default:
+		server := func(args *driver.HTTPServerArgs) error {
+			handler, ok := args.Handlers[remainingPath]
+			if !ok {
+				return errors.Errorf("unknown endpoint %s", remainingPath)
+			}
+			handler.ServeHTTP(w, r)
+			return nil
+		}
+
+		storageFetcher := func(_ string, _, _ time.Duration) (*profile.Profile, string, error) {
+			var prof *profile.Profile
+
+			q, err := p.db.Querier(0, math.MaxInt64)
+			if err != nil {
+				level.Error(p.logger).Log("err", err)
+			}
+
+			ss, err := q.Select(m...)
+			if err != nil {
+				level.Error(p.logger).Log("err", err)
+				return nil, "", err
+			}
+
+			ok := ss.Next()
+			if !ok {
+				return nil, "", errors.New("could not get series set")
+			}
+			s := ss.At()
+			i := s.Iterator()
+			t, err := stringToInt(timestamp)
+			if err != nil {
+				return nil, "", err
+			}
+			ok = i.Seek(t)
+			if !ok {
+				return nil, "", errors.New("could not seek series")
+			}
+			_, buf := i.At()
+			prof, err = profile.Parse(bytes.NewReader(buf))
+			return prof, "", err
+		}
+
+		// Invoke the (library version) of `pprof` with a number of stubs.
+		// Specifically, we pass a fake FlagSet that plumbs through the
+		// given args, a UI that logs any errors pprof may emit, a fetcher
+		// that simply reads the profile we downloaded earlier, and a
+		// HTTPServer that pprof will pass the web ui handlers to at the
+		// end (and we let it handle this client request).
+		if err := driver.PProf(&driver.Options{
+			Flagset: &pprofFlags{
+				FlagSet: pflag.NewFlagSet("pprof", pflag.ExitOnError),
+				args: []string{
+					"--symbolize", "none",
+					"--http", "localhost:0",
+					"", // we inject our own target
+				},
 			},
-		},
-		UI:         &fakeUI{},
-		Fetch:      fetcherFn(storageFetcher),
-		HTTPServer: server,
-	}); err != nil {
-		_, _ = w.Write([]byte(err.Error()))
+			UI:         &fakeUI{},
+			Fetch:      fetcherFn(storageFetcher),
+			HTTPServer: server,
+		}); err != nil {
+			_, _ = w.Write([]byte(err.Error()))
+		}
 	}
 }
 
