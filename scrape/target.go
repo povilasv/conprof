@@ -423,14 +423,8 @@ func targetsFromGroup(tg *targetgroup.Group, cfg *config.ScrapeConfig) ([]*Targe
 						params = url.Values{}
 					}
 					params.Add("seconds", strconv.Itoa(cfg.ProfilingConfig.PprofConfig.Trace.Seconds))
-				case ProfileProfileType:
-					if params == nil {
-						params = url.Values{}
-					}
-					params.Add("seconds", strconv.Itoa(cfg.ProfilingConfig.PprofConfig.Profile.Seconds))
 				}
-
-				targets = append(targets, NewTarget(lbls, origLabels, cfg.Params))
+				targets = append(targets, NewTarget(lbls, origLabels, params))
 			}
 		}
 	}
