@@ -54,7 +54,7 @@ func New(logger log.Logger, db *tsdb.DB) *pprofUI {
 	return s
 }
 
-func parsePath(reqPath string) (series string, timestamp string, remainingPath string) {
+func parsePath(reqPath string) (series, timestamp, remainingPath string) {
 	parts := strings.Split(path.Clean(strings.TrimPrefix(reqPath, "/pprof/")), "/")
 	if len(parts) < 2 {
 		return "", "", ""
@@ -106,43 +106,69 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 
 		ok := ss.Next()
 		if !ok {
+			level.Error(p.logger).Log("msg", "err no seriesset")
 			return
 		}
 		s := ss.At()
 		i := s.Iterator()
 		t, err := stringToInt(timestamp)
 		if err != nil {
+			level.Error(p.logger).Log("err timestamp", err)
 			return
 		}
 		ok = i.Seek(t)
 		if !ok {
+			level.Error(p.logger).Log("err seek", err)
 			return
 		}
 		_, buf := i.At()
 		res, err := trace.Parse(bytes.NewBuffer(buf), "")
 		if err != nil {
+			level.Error(p.logger).Log("err parse trace", err)
+			return
+		}
+		switch remainingPath {
+		case "/usertasks":
+			httpUserTasks(w, r, &res)
+			return
+		case "/usertask":
+			httpUserTask(w, r, &res)
+			return
+		case "/userregions":
+			httpUserRegions(w, r, &res)
+			return
+		case "/userregion":
+			httpUserRegion(w, r, &res)
+			return
+		case "/goroutines":
+			httpGoroutines(w, r, res.Events)
+			return
+		case "/goroutine":
+			httpGoroutine(w, r, res.Events)
+			return
+		case "/trace":
+			httpTrace(w, r)
+			return
+		case "/jsontrace":
+			httpJsonTrace(w, r, &res)
+			return
+		case "/trace_viewer_html":
+			httpTraceViewerHTML(w, r)
+			return
+		case "/webcomponents.min.js":
+			webcomponentsJS(w, r)
+			return
+		default:
+			ranges, err := splitTrace(res)
+			if err != nil {
+				level.Error(p.logger).Log("err split trace", err)
+				return
+			}
+
+			traceUIhttpMain(w, r, ranges, series, timestamp)
 			return
 		}
 
-		ranges, err := splitTrace(res)
-		if err != nil {
-			return
-		}
-
-		/*
-							http.HandleFunc("/usertasks", httpUserTasks)
-							http.HandleFunc("/usertask", httpUserTask)
-							http.HandleFunc("/userregions", httpUserRegions)
-							http.HandleFunc("/userregion", httpUserRegion)
-					http.HandleFunc("/goroutines", httpGoroutines)
-					http.HandleFunc("/goroutine", httpGoroutine)
-			http.HandleFunc("/trace", httpTrace)
-			http.HandleFunc("/jsontrace", httpJsonTrace)
-			http.HandleFunc("/trace_viewer_html", httpTraceViewerHTML)
-			http.HandleFunc("/webcomponents.min.js", webcomponentsJS)
-
-		*/
-		traceUIhttpMain(w, r, ranges)
 	default:
 		server := func(args *driver.HTTPServerArgs) error {
 			handler, ok := args.Handlers[remainingPath]
