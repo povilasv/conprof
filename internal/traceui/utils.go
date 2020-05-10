@@ -60,10 +60,10 @@ var templMain = template.Must(template.New("").Parse(`
 	<a href="{{.Path}}/trace">View trace</a><br>
 {{end}}
 <a href="{{.Path}}/goroutines">Goroutine analysis</a><br>
-<a href="{{.Path}}/io">Network blocking profile</a> (<a href="/io?raw=1" download="io.profile">⬇</a>)<br>
-<a href="{{.Path}}/block">Synchronization blocking profile</a> (<a href="/block?raw=1" download="block.profile">⬇</a>)<br>
-<a href="{{.Path}}/syscall">Syscall blocking profile</a> (<a href="/syscall?raw=1" download="syscall.profile">⬇</a>)<br>
-<a href="{{.Path}}/sched">Scheduler latency profile</a> (<a href="/sche?raw=1" download="sched.profile">⬇</a>)<br>
+<a href="{{.Path}}/io">Network blocking profile</a> (<a href="{{.Path}}/io?raw=1" download="io.profile">⬇</a>)<br>
+<a href="{{.Path}}/block">Synchronization blocking profile</a> (<a href="{{.Path}}/block?raw=1" download="block.profile">⬇</a>)<br>
+<a href="{{.Path}}/syscall">Syscall blocking profile</a> (<a href="{{.Path}}/syscall?raw=1" download="syscall.profile">⬇</a>)<br>
+<a href="{{.Path}}/sched">Scheduler latency profile</a> (<a href="{{.Path}}/sche?raw=1" download="sched.profile">⬇</a>)<br>
 <a href="{{.Path}}/usertasks">User-defined tasks</a><br>
 <a href="{{.Path}}/userregions">User-defined regions</a><br>
 <a href="{{.Path}}/mmu">Minimum mutator utilization</a><br>
