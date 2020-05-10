@@ -25,8 +25,9 @@ import (
 	"strings"
 	"time"
 
+	"github.com/conprof/conprof/internal/trace"
+	"github.com/conprof/conprof/internal/traceui"
 	"github.com/conprof/conprof/scrape"
-	"github.com/conprof/conprof/trace"
 	"github.com/conprof/tsdb"
 	"github.com/conprof/tsdb/labels"
 	"github.com/go-kit/kit/log"
@@ -93,73 +94,83 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 
 	switch profType {
 	case scrape.ProfileTraceType:
-		q, err := p.db.Querier(0, math.MaxInt64)
+		buf, err := p.getProfile(m, timestamp)
 		if err != nil {
-			level.Error(p.logger).Log("err", err)
-		}
-
-		ss, err := q.Select(m...)
-		if err != nil {
-			level.Error(p.logger).Log("err", err)
+			level.Error(p.logger).Log("msg", "get profile", "err", err)
 			return
 		}
-
-		ok := ss.Next()
-		if !ok {
-			level.Error(p.logger).Log("msg", "err no seriesset")
-			return
-		}
-		s := ss.At()
-		i := s.Iterator()
-		t, err := stringToInt(timestamp)
-		if err != nil {
-			level.Error(p.logger).Log("err timestamp", err)
-			return
-		}
-		ok = i.Seek(t)
-		if !ok {
-			level.Error(p.logger).Log("err seek", err)
-			return
-		}
-		_, buf := i.At()
 		res, err := trace.Parse(bytes.NewBuffer(buf), "")
 		if err != nil {
-			level.Error(p.logger).Log("err parse trace", err)
+			level.Error(p.logger).Log("msg", "parse trace", "err", err)
+			// TODO: write http error
 			return
 		}
-		switch strings.ReplaceAll(remainingPath, "?", "") {
+		serv, err := traceui.New(res, "/pprof/"+series+"/"+timestamp)
+		if err != nil {
+			level.Error(p.logger).Log("msg", "create server", "err", err)
+			// TODO: write http error
+			return
+		}
+		switch remainingPath {
+		case "/io":
+			traceui.ServeSVGProfile(serv.PprofByGoroutine(traceui.ComputePprofIO))(w, r)
+			return
+		case "/block":
+			traceui.ServeSVGProfile(serv.PprofByGoroutine(traceui.ComputePprofBlock))(w, r)
+			return
+		case "/syscall":
+			traceui.ServeSVGProfile(serv.PprofByGoroutine(traceui.ComputePprofSyscall))(w, r)
+			return
+		case "/sched":
+			traceui.ServeSVGProfile(serv.PprofByGoroutine(traceui.ComputePprofSched))(w, r)
+			return
+		case "/regionblock":
+			traceui.ServeSVGProfile(serv.PprofByRegion(traceui.ComputePprofBlock))(w, r)
+			return
+		case "/regionsyscall":
+			traceui.ServeSVGProfile(serv.PprofByRegion(traceui.ComputePprofSyscall))(w, r)
+			return
+		case "/regionsched":
+			traceui.ServeSVGProfile(serv.PprofByRegion(traceui.ComputePprofSched))(w, r)
+			return
 		case "/usertasks":
-			httpUserTasks(w, r, &res)
+			serv.HTTPUserTasks(w, r)
 			return
 		case "/usertask":
-			httpUserTask(w, r, &res)
+			serv.HTTPUserTask(w, r)
 			return
 		case "/userregions":
-			httpUserRegions(w, r, &res)
+			serv.HTTPUserRegions(w, r)
 			return
 		case "/userregion":
-			httpUserRegion(w, r, &res)
+			serv.HTTPUserRegion(w, r)
 			return
 		case "/goroutines":
-			httpGoroutines(w, r, res.Events)
+			serv.HTTPGoroutines(w, r)
 			return
 		case "/goroutine":
-			httpGoroutine(w, r, res.Events)
+			serv.HTTPGoroutine(w, r)
+			return
+		case "/mmu":
+			serv.HTTPMMU(w, r)
+			return
+		case "/mmuPlot":
+			serv.HTTPMMUPlot(w, r)
+			return
+		case "/mmuDetails":
+			serv.HTTPMMUDetails(w, r)
 			return
 		case "/trace":
-			httpTrace(w, r, "/pprof/"+series+"/"+timestamp)
+			serv.HTTPTrace(w, r)
 			return
-		case "/jsontrace":
-			httpJsonTrace(w, r, &res)
+		}
+		switch {
+		case strings.HasPrefix(remainingPath, "/jsontrace"):
+			serv.HTTPJSONTrace(w, r)
 			return
-		default:
-			ranges, err := splitTrace(res)
-			if err != nil {
-				level.Error(p.logger).Log("err split trace", err)
-				return
-			}
 
-			traceUIhttpMain(w, r, ranges, series+"/"+timestamp)
+		default:
+			serv.HTTPMain(w, r)
 			return
 		}
 
@@ -176,32 +187,11 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 		storageFetcher := func(_ string, _, _ time.Duration) (*profile.Profile, string, error) {
 			var prof *profile.Profile
 
-			q, err := p.db.Querier(0, math.MaxInt64)
+			buf, err := p.getProfile(m, timestamp)
 			if err != nil {
-				level.Error(p.logger).Log("err", err)
-			}
-
-			ss, err := q.Select(m...)
-			if err != nil {
-				level.Error(p.logger).Log("err", err)
+				level.Error(p.logger).Log("msg", "get profile", "err", err)
 				return nil, "", err
 			}
-
-			ok := ss.Next()
-			if !ok {
-				return nil, "", errors.New("could not get series set")
-			}
-			s := ss.At()
-			i := s.Iterator()
-			t, err := stringToInt(timestamp)
-			if err != nil {
-				return nil, "", err
-			}
-			ok = i.Seek(t)
-			if !ok {
-				return nil, "", errors.New("could not seek series")
-			}
-			_, buf := i.At()
 			prof, err = profile.Parse(bytes.NewReader(buf))
 			return prof, "", err
 		}
@@ -239,4 +229,34 @@ func (f fetcherFn) Fetch(s string, d, t time.Duration) (*profile.Profile, string
 func stringToInt(s string) (int64, error) {
 	i, err := strconv.ParseInt(s, 10, 64)
 	return int64(i), err
+}
+
+func (p *pprofUI) getProfile(m labels.Selector, timestamp string) ([]byte, error) {
+	q, err := p.db.Querier(0, math.MaxInt64)
+	if err != nil {
+		return nil, errors.Wrap(err, "querier")
+	}
+
+	ss, err := q.Select(m...)
+	if err != nil {
+		return nil, err
+	}
+
+	ok := ss.Next()
+	if !ok {
+		return nil, errors.Wrap(err, "empty seriesset")
+	}
+	s := ss.At()
+	i := s.Iterator()
+	t, err := stringToInt(timestamp)
+	if err != nil {
+		return nil, errors.Wrap(err, "bad timestamp")
+	}
+	ok = i.Seek(t)
+	if !ok {
+		return nil, errors.Wrap(err, "seek")
+	}
+	_, buf := i.At()
+
+	return buf, nil
 }

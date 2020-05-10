@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package pprofui
+package traceui
 
 import (
 	"encoding/json"
@@ -19,16 +19,16 @@ import (
 	"strings"
 	"time"
 
-	"github.com/conprof/conprof/trace"
+	"github.com/conprof/conprof/internal/trace"
 )
 
-// httpTrace serves either whole trace (goid==0) or trace for goid goroutine.
-func httpTrace(w http.ResponseWriter, r *http.Request, path string) {
+// HTTPTrace serves either whole trace (goid==0) or trace for goid goroutine.
+func (s *Server) HTTPTrace(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
 	}
-	html := strings.ReplaceAll(templTrace, "{{PATH}}", path)
+	html := strings.ReplaceAll(templTrace, "{{PATH}}", s.path)
 	html = strings.ReplaceAll(html, "{{PARAMS}}", r.Form.Encode())
 	w.Write([]byte(html))
 }
@@ -171,13 +171,13 @@ func webcomponentsJS(w http.ResponseWriter, r *http.Request) {
 	http.ServeFile(w, r, filepath.Join(runtime.GOROOT(), "misc", "trace", "webcomponents.min.js"))
 }
 
-// httpJsonTrace serves json trace, requested from within templTrace HTML.
-func httpJsonTrace(w http.ResponseWriter, r *http.Request, res *trace.ParseResult) {
+// HTTPJSONTrace serves json trace, requested from within templTrace HTML.
+func (s *Server) HTTPJSONTrace(w http.ResponseWriter, r *http.Request) {
 	defer debug.FreeOSMemory()
 	// This is an AJAX handler, so instead of http.Error we use log.Printf to log errors.
 
 	params := &traceParams{
-		parsed:  *res,
+		parsed:  s.t,
 		endTime: math.MaxInt64,
 	}
 
@@ -188,7 +188,7 @@ func httpJsonTrace(w http.ResponseWriter, r *http.Request, res *trace.ParseResul
 			log.Printf("failed to parse goid parameter %q: %v", goids, err)
 			return
 		}
-		analyzeGoroutines(res.Events)
+		analyzeGoroutines(s.events)
 		g, ok := gs[goid]
 		if !ok {
 			log.Printf("failed to find goroutine %d", goid)
@@ -199,17 +199,17 @@ func httpJsonTrace(w http.ResponseWriter, r *http.Request, res *trace.ParseResul
 		if g.EndTime != 0 {
 			params.endTime = g.EndTime
 		} else { // The goroutine didn't end.
-			params.endTime = lastTimestamp(res)
+			params.endTime = lastTimestamp(s.t)
 		}
 		params.maing = goid
-		params.gs = trace.RelatedGoroutines(res.Events, goid)
+		params.gs = trace.RelatedGoroutines(s.events, goid)
 	} else if taskids := r.FormValue("taskid"); taskids != "" {
 		taskid, err := strconv.ParseUint(taskids, 10, 64)
 		if err != nil {
 			log.Printf("failed to parse taskid parameter %q: %v", taskids, err)
 			return
 		}
-		annotRes, _ := analyzeAnnotations(res)
+		annotRes, _ := analyzeAnnotations(s.t)
 		task, ok := annotRes.tasks[taskid]
 		if !ok || len(task.events) == 0 {
 			log.Printf("failed to find task with id %d", taskid)
@@ -224,7 +224,7 @@ func httpJsonTrace(w http.ResponseWriter, r *http.Request, res *trace.ParseResul
 		gs := map[uint64]bool{}
 		for _, t := range params.tasks {
 			// find only directly involved goroutines
-			for k, v := range t.RelatedGoroutines(res.Events, 0) {
+			for k, v := range t.RelatedGoroutines(s.events, 0) {
 				gs[k] = v
 			}
 		}
@@ -235,7 +235,7 @@ func httpJsonTrace(w http.ResponseWriter, r *http.Request, res *trace.ParseResul
 			log.Printf("failed to parse focustask parameter %q: %v", taskids, err)
 			return
 		}
-		annotRes, _ := analyzeAnnotations(res)
+		annotRes, _ := analyzeAnnotations(s.t)
 		task, ok := annotRes.tasks[taskid]
 		if !ok || len(task.events) == 0 {
 			log.Printf("failed to find task with id %d", taskid)
@@ -1158,7 +1158,7 @@ func isSystemGoroutine(entryFn string) bool {
 }
 
 // firstTimestamp returns the timestamp of the first event record.
-func firstTimestamp(res *trace.ParseResult) int64 {
+func firstTimestamp(res trace.ParseResult) int64 {
 	if len(res.Events) > 0 {
 		return res.Events[0].Ts
 	}
@@ -1166,7 +1166,7 @@ func firstTimestamp(res *trace.ParseResult) int64 {
 }
 
 // lastTimestamp returns the timestamp of the last event record.
-func lastTimestamp(res *trace.ParseResult) int64 {
+func lastTimestamp(res trace.ParseResult) int64 {
 	if n := len(res.Events); n > 1 {
 		return res.Events[n-1].Ts
 	}

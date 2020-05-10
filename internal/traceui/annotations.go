@@ -2,7 +2,7 @@
 // Use of this source code is governed by a BSD-style
 // license that can be found in the LICENSE file.
 
-package pprofui
+package traceui
 
 import (
 	"bytes"
@@ -17,12 +17,12 @@ import (
 	"strings"
 	"time"
 
-	"github.com/conprof/conprof/trace"
+	"github.com/conprof/conprof/internal/trace"
 )
 
-// httpUserTasks reports all tasks found in the trace.
-func httpUserTasks(w http.ResponseWriter, r *http.Request, t *trace.ParseResult) {
-	res, err := analyzeAnnotations(t)
+// HTTPUserTasks reports all tasks found in the trace.
+func (s *Server) HTTPUserTasks(w http.ResponseWriter, r *http.Request) {
+	res, err := analyzeAnnotations(s.t)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -50,15 +50,23 @@ func httpUserTasks(w http.ResponseWriter, r *http.Request, t *trace.ParseResult)
 	})
 
 	// Emit table.
-	err = templUserTaskTypes.Execute(w, userTasks)
+	err = templUserTaskTypes.Execute(w,
+		struct {
+			UserTasks []taskStats
+			Path      string
+		}{
+			UserTasks: userTasks,
+			Path:      s.path,
+		})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to execute template: %v", err), http.StatusInternalServerError)
 		return
 	}
 }
 
-func httpUserRegions(w http.ResponseWriter, r *http.Request, t *trace.ParseResult) {
-	res, err := analyzeAnnotations(t)
+// HTTPUserRegions
+func (s *Server) HTTPUserRegions(w http.ResponseWriter, r *http.Request) {
+	res, err := analyzeAnnotations(s.t)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -88,20 +96,28 @@ func httpUserRegions(w http.ResponseWriter, r *http.Request, t *trace.ParseResul
 		return userRegions[i].Frame.PC < userRegions[j].Frame.PC
 	})
 	// Emit table.
-	err = templUserRegionTypes.Execute(w, userRegions)
+	err = templUserRegionTypes.Execute(w,
+		struct {
+			UserRegions []regionStats
+			Path        string
+		}{
+			UserRegions: userRegions,
+			Path:        s.path,
+		})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to execute template: %v", err), http.StatusInternalServerError)
 		return
 	}
 }
 
-func httpUserRegion(w http.ResponseWriter, r *http.Request, t *trace.ParseResult) {
+// HTTPUserRegion
+func (s *Server) HTTPUserRegion(w http.ResponseWriter, r *http.Request) {
 	filter, err := newRegionFilter(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
-	res, err := analyzeAnnotations(t)
+	res, err := analyzeAnnotations(s.t)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -151,15 +167,15 @@ func httpUserRegion(w http.ResponseWriter, r *http.Request, t *trace.ParseResult
 	}
 }
 
-// httpUserTask presents the details of the selected tasks.
-func httpUserTask(w http.ResponseWriter, r *http.Request, t *trace.ParseResult) {
+// HTTPUserTask presents the details of the selected tasks.
+func (s *Server) HTTPUserTask(w http.ResponseWriter, r *http.Request) {
 	filter, err := newTaskFilter(r)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
 
-	res, err := analyzeAnnotations(t)
+	res, err := analyzeAnnotations(s.t)
 	if err != nil {
 		http.Error(w, err.Error(), http.StatusInternalServerError)
 		return
@@ -183,7 +199,7 @@ func httpUserTask(w http.ResponseWriter, r *http.Request, t *trace.ParseResult) 
 		GCTime     time.Duration
 	}
 
-	base := time.Duration(firstTimestamp(t)) * time.Nanosecond // trace start
+	base := time.Duration(firstTimestamp(s.t)) * time.Nanosecond // trace start
 
 	var data []entry
 
@@ -240,9 +256,11 @@ func httpUserTask(w http.ResponseWriter, r *http.Request, t *trace.ParseResult) 
 	err = templUserTaskType.Execute(w, struct {
 		Name  string
 		Entry []entry
+		Path  string
 	}{
 		Name:  filter.name,
 		Entry: data,
+		Path:  s.path,
 	})
 	if err != nil {
 		log.Printf("failed to execute template: %v", err)
@@ -264,7 +282,7 @@ type regionTypeID struct {
 
 // analyzeAnnotations analyzes user annotation events and
 // returns the task descriptors keyed by internal task id.
-func analyzeAnnotations(res *trace.ParseResult) (annotationAnalysisResult, error) {
+func analyzeAnnotations(res trace.ParseResult) (annotationAnalysisResult, error) {
 	events := res.Events
 	if len(events) == 0 {
 		return annotationAnalysisResult{}, fmt.Errorf("empty trace")
@@ -921,6 +939,7 @@ func (s *regionStats) add(region regionDesc) {
 }
 
 var templUserRegionTypes = template.Must(template.New("").Parse(`
+{{$path := .Path}}
 <html>
 <style type="text/css">
 .histoTime {
@@ -936,10 +955,10 @@ var templUserRegionTypes = template.Must(template.New("").Parse(`
 <th>Count</th>
 <th>Duration distribution (complete tasks)</th>
 </tr>
-{{range $}}
+{{range .UserRegions}}
   <tr>
     <td>{{.Type}}<br>{{.Frame.Fn}}<br>{{.Frame.File}}:{{.Frame.Line}}</td>
-    <td><a href="/userregion?type={{.Type}}&pc={{.Frame.PC}}">{{.Histogram.Count}}</a></td>
+    <td><a href="{{$path}}/userregion?type={{.Type}}&pc={{.Frame.PC}}">{{.Histogram.Count}}</a></td>
     <td>{{.Histogram.ToHTML (.UserRegionURL)}}</td>
   </tr>
 {{end}}
@@ -968,6 +987,7 @@ func (s *taskStats) add(task *taskDesc) {
 }
 
 var templUserTaskTypes = template.Must(template.New("").Parse(`
+{{$path := .Path}}
 <html>
 <style type="text/css">
 .histoTime {
@@ -977,17 +997,17 @@ var templUserTaskTypes = template.Must(template.New("").Parse(`
 
 </style>
 <body>
-Search log text: <form action="/usertask"><input name="logtext" type="text"><input type="submit"></form><br>
+Search log text: <form action="{{$path}}/usertask"><input name="logtext" type="text"><input type="submit"></form><br>
 <table border="1" sortable="1">
 <tr>
 <th>Task type</th>
 <th>Count</th>
 <th>Duration distribution (complete tasks)</th>
 </tr>
-{{range $}}
+{{range .UserTasks}}
   <tr>
     <td>{{.Type}}</td>
-    <td><a href="/usertask?type={{.Type}}">{{.Count}}</a></td>
+    <td><a href="{{$path}}/usertask?type={{.Type}}">{{.Count}}</a></td>
     <td>{{.Histogram.ToHTML (.UserTaskURL true)}}</td>
   </tr>
 {{end}}
@@ -1001,6 +1021,7 @@ var templUserTaskType = template.Must(template.New("userTask").Funcs(template.Fu
 	"asMillisecond": asMillisecond,
 	"trimSpace":     strings.TrimSpace,
 }).Parse(`
+{{$path := .Path}}
 <html>
 <head> <title>User Task: {{.Name}} </title> </head>
         <style type="text/css">
@@ -1055,7 +1076,7 @@ Search log text: <form onsubmit="window.location.search+='&logtext='+window.logt
                 <td class="when">{{$el.WhenString}}</td>
                 <td class="elapsed">{{$el.Duration}}</td>
 		<td></td>
-                <td><a href="/trace?taskid={{$el.ID}}#{{asMillisecond $el.Start}}:{{asMillisecond $el.End}}">Task {{$el.ID}}</a> ({{if .Complete}}complete{{else}}incomplete{{end}})</td>
+                <td><a href="{{$path}}/trace?taskid={{$el.ID}}#{{asMillisecond $el.Start}}:{{asMillisecond $el.End}}">Task {{$el.ID}}</a> ({{if .Complete}}complete{{else}}incomplete{{end}})</td>
         </tr>
         {{range $el.Events}}
         <tr>

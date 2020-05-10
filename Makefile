@@ -14,11 +14,9 @@
 # Needs to be defined before including Makefile.common to auto-generate targets
 DOCKER_ARCHS ?= amd64 armv7 arm64
 GOLANGCI_LINT_OPTS = --skip-dirs internal
-
 include Makefile.common
 
 DOCKER_IMAGE_NAME       ?= conprof
-
 GO111MODULE       ?= on
 export GO111MODULE
 GOPROXY           ?= https://proxy.golang.org

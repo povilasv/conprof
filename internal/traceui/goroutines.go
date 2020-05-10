@@ -4,7 +4,7 @@
 
 // Goroutine-related profiles.
 
-package pprofui
+package traceui
 
 import (
 	"fmt"
@@ -17,7 +17,7 @@ import (
 	"sync"
 	"time"
 
-	"github.com/conprof/conprof/trace"
+	"github.com/conprof/conprof/internal/trace"
 )
 
 // gtype describes a group of goroutines grouped by start PC.
@@ -40,9 +40,9 @@ func analyzeGoroutines(events []*trace.Event) {
 	})
 }
 
-// httpGoroutines serves list of goroutine groups.
-func httpGoroutines(w http.ResponseWriter, r *http.Request, events []*trace.Event) {
-	analyzeGoroutines(events)
+// HTTPGoroutines serves list of goroutine groups.
+func (s *Server) HTTPGoroutines(w http.ResponseWriter, r *http.Request) {
+	analyzeGoroutines(s.events)
 	gss := make(map[uint64]gtype)
 	for _, g := range gs {
 		gs1 := gss[g.PC]
@@ -59,7 +59,11 @@ func httpGoroutines(w http.ResponseWriter, r *http.Request, events []*trace.Even
 	}
 	sort.Slice(glist, func(i, j int) bool { return glist[i].ExecTime > glist[j].ExecTime })
 	w.Header().Set("Content-Type", "text/html;charset=utf-8")
-	if err := templGoroutines.Execute(w, glist); err != nil {
+	type Templ struct {
+		Goroutines []gtype
+		Path       string
+	}
+	if err := templGoroutines.Execute(w, Templ{Goroutines: glist, Path: s.path}); err != nil {
 		log.Printf("failed to execute template: %v", err)
 		return
 	}
@@ -68,22 +72,23 @@ func httpGoroutines(w http.ResponseWriter, r *http.Request, events []*trace.Even
 var templGoroutines = template.Must(template.New("").Parse(`
 <html>
 <body>
+{{$path := .Path}}
 Goroutines: <br>
-{{range $}}
-  <a href="/goroutine?id={{.ID}}">{{.Name}}</a> N={{.N}} <br>
+{{range .Goroutines}}
+  <a href="{{$path}}/goroutine?id={{.ID}}">{{.Name}}</a> N={{.N}} <br>
 {{end}}
 </body>
 </html>
 `))
 
-// httpGoroutine serves list of goroutines in a particular group.
-func httpGoroutine(w http.ResponseWriter, r *http.Request, events []*trace.Event) {
+// HTTPGoroutine serves list of goroutines in a particular group.
+func (s *Server) HTTPGoroutine(w http.ResponseWriter, r *http.Request) {
 	pc, err := strconv.ParseUint(r.FormValue("id"), 10, 64)
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to parse id parameter '%v': %v", r.FormValue("id"), err), http.StatusInternalServerError)
 		return
 	}
-	analyzeGoroutines(events)
+	analyzeGoroutines(s.events)
 	var (
 		glist                   []*trace.GDesc
 		name                    string
@@ -131,6 +136,7 @@ func httpGoroutine(w http.ResponseWriter, r *http.Request, events []*trace.Event
 		ExecTimePercent string
 		MaxTotal        int64
 		GList           []*trace.GDesc
+		Path            string
 	}{
 		Name:            name,
 		PC:              pc,
@@ -138,6 +144,7 @@ func httpGoroutine(w http.ResponseWriter, r *http.Request, events []*trace.Event
 		ExecTimePercent: execTimePercent,
 		MaxTotal:        maxTotalTime,
 		GList:           glist,
+		Path:            s.path,
 	})
 	if err != nil {
 		http.Error(w, fmt.Sprintf("failed to execute template: %v", err), http.StatusInternalServerError)
@@ -170,6 +177,7 @@ var templGoroutine = template.Must(template.New("").Funcs(template.FuncMap{
 		return 0
 	},
 }).Parse(`
+{{$path := .Path}}
 <!DOCTYPE html>
 <title>Goroutine {{.Name}}</title>
 <style>
@@ -246,7 +254,7 @@ function reloadTable(key, value) {
 </tr>
 {{range .GList}}
   <tr>
-    <td> <a href="/trace?goid={{.ID}}">{{.ID}}</a> </td>
+    <td> <a href="{{$path}}/trace?goid={{.ID}}">{{.ID}}</a> </td>
     <td> {{prettyDuration .TotalTime}} </td>
     <td>
 	<div class="stacked-bar-graph">
