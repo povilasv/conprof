@@ -87,7 +87,7 @@ func (p *pprofUI) PprofView(w http.ResponseWriter, r *http.Request, ps httproute
 	var profType string
 	for i, l := range seriesLabels {
 		m[i] = labels.NewEqualMatcher(l.Name, l.Value)
-		if l.Name == scrape.ProfileType {
+		if l.Name == scrape.ProfileName {
 			profType = l.Value
 		}
 	}

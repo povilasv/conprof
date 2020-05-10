@@ -233,10 +233,10 @@ function reloadTable(key, value) {
 	<tr><td>Goroutine Name:</td><td>{{.Name}}</td></tr>
 	<tr><td>Number of Goroutines:</td><td>{{.N}}</td></tr>
 	<tr><td>Execution Time:</td><td>{{.ExecTimePercent}} of total program execution time </td> </tr>
-	<tr><td>Network Wait Time:</td><td> <a href="{{$path}}/io?id={{.PC}}">graph</a><a href="/io?id={{.PC}}&raw=1" download="io.profile">(download)</a></td></tr>
-	<tr><td>Sync Block Time:</td><td> <a href="{{$path}/block?id={{.PC}}">graph</a><a href="/block?id={{.PC}}&raw=1" download="block.profile">(download)</a></td></tr>
-	<tr><td>Blocking Syscall Time:</td><td> <a href="{{$path}}/syscall?id={{.PC}}">graph</a><a href="/syscall?id={{.PC}}&raw=1" download="syscall.profile">(download)</a></td></tr>
-	<tr><td>Scheduler Wait Time:</td><td> <a href="{{$path}}/sched?id={{.PC}}">graph</a><a href="/sched?id={{.PC}}&raw=1" download="sched.profile">(download)</a></td></tr>
+	<tr><td>Network Wait Time:</td><td> <a href="{{$path}}/io?id={{.PC}}">graph</a><a href="{{$path}}/io?id={{.PC}}&raw=1" download="io.profile">(download)</a></td></tr>
+	<tr><td>Sync Block Time:</td><td> <a href="{{$path}}/block?id={{.PC}}">graph</a><a href="{{$path}}/block?id={{.PC}}&raw=1" download="block.profile">(download)</a></td></tr>
+	<tr><td>Blocking Syscall Time:</td><td> <a href="{{$path}}/syscall?id={{.PC}}">graph</a><a href="{{$path}}/syscall?id={{.PC}}&raw=1" download="syscall.profile">(download)</a></td></tr>
+	<tr><td>Scheduler Wait Time:</td><td> <a href="{{$path}}/sched?id={{.PC}}">graph</a><a href="{{$path}}/sched?id={{.PC}}&raw=1" download="sched.profile">(download)</a></td></tr>
 </table>
 <p>
 <table class="details">

@@ -13,7 +13,6 @@ import (
 	"io/ioutil"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"runtime"
 	"sort"
@@ -21,7 +20,9 @@ import (
 	"time"
 
 	"github.com/conprof/conprof/internal/trace"
+	"github.com/google/pprof/driver"
 	"github.com/google/pprof/profile"
+	"github.com/spf13/pflag"
 )
 
 func goCmd() string {
@@ -300,8 +301,27 @@ func ServeSVGProfile(prof func(w io.Writer, r *http.Request) error) http.Handler
 			return
 		}
 		svgFilename := blockf.Name() + ".svg"
-		if output, err := exec.Command(goCmd(), "tool", "pprof", "-svg", "-output", svgFilename, blockf.Name()).CombinedOutput(); err != nil {
-			http.Error(w, fmt.Sprintf("failed to execute go tool pprof: %v\n%s", err, output), http.StatusInternalServerError)
+		/*
+			if output, err := exec.Command(goCmd(), "tool", "pprof", "-svg", "-output", svgFilename, blockf.Name()).CombinedOutput(); err != nil {
+				http.Error(w, fmt.Sprintf("failed to execute go tool pprof: %v\n%s", err, output), http.StatusInternalServerError)
+				return
+			}
+		*/
+		options := &driver.Options{
+			Fetch: new(fetcher),
+			// Obj:   new(objTool),
+			UI: newUI(),
+			Flagset: &pprofFlags{
+				FlagSet: pflag.NewFlagSet("pprof", pflag.ExitOnError),
+				args: []string{
+					"--svg",
+					"--output", svgFilename,
+					blockf.Name(),
+				},
+			},
+		}
+		if err := driver.PProf(options); err != nil {
+			http.Error(w, fmt.Sprintf("failed to invoke pprof: %v", err), http.StatusInternalServerError)
 			return
 		}
 		defer os.Remove(svgFilename)
